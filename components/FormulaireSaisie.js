@@ -1,4 +1,11 @@
-async function submit() {
+async function function toBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+    });
+  } submit() {
     setSubmitting(true);
     try {
       const SCRIPT_URL = process.env.NEXT_PUBLIC_APPS_SCRIPT_URL;
