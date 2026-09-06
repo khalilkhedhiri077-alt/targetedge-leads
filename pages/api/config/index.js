@@ -1,22 +1,44 @@
-import { getConfig, saveConfigRow, deleteConfigRow } from '../../../lib/config';
-
 export default async function handler(req, res) {
+  const SCRIPT_URL = process.env.NEXT_PUBLIC_APPS_SCRIPT_URL;
+
   if (req.method === 'GET') {
-    const config = await getConfig();
-    return res.status(200).json(config);
+    try {
+      const response = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'get_config' }),
+        redirect: 'follow',
+      });
+      const text = await response.text();
+      console.log('Apps Script response:', text);
+      let data;
+      try { data = JSON.parse(text); }
+      catch(e2) { data = { campagnes: [], soustraitants: [], clients: [], raw: text }; }
+      return res.status(200).json(data);
+    } catch (e) {
+      return res.status(500).json({ campagnes: [], soustraitants: [], clients: [], error: e.message });
+    }
   }
 
   if (req.method === 'POST') {
     const { action, row } = req.body;
-    if (action === 'save') {
-      await saveConfigRow(row);
-      return res.status(200).json({ success: true });
+    try {
+      const response = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: action === 'save' ? 'save_config' : 'delete_config',
+          row: action === 'save' ? row : undefined,
+          id: action === 'delete' ? row.id : undefined,
+        }),
+        redirect: 'follow',
+      });
+      const text = await response.text();
+      const data = JSON.parse(text);
+      return res.status(200).json(data);
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
     }
-    if (action === 'delete') {
-      await deleteConfigRow(row.id);
-      return res.status(200).json({ success: true });
-    }
-    return res.status(400).json({ error: 'Action inconnue' });
   }
 
   res.status(405).end();
