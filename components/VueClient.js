@@ -17,7 +17,7 @@ function borderCol(s) {
 
 export default function VueClient({ client, operation, titre }) {
   const [leads, setLeads] = useState([]);
-  const [config, setConfig] = useState({ campagnes: [] });
+  const [campagnes, setCampagnes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('leads');
   const [modal, setModal] = useState(null);
@@ -30,10 +30,15 @@ export default function VueClient({ client, operation, titre }) {
       fetch('/api/config').then(r => r.json()),
     ]).then(([ld, cfg]) => {
       setLeads(ld.leads || []);
-      setConfig(cfg);
+      setCampagnes(cfg.campagnes || []);
       setLoading(false);
     });
   }, [client]);
+
+  function getCpl(op) {
+    const c = campagnes.find(c => c.operation === op && c.client_id === client);
+    return c ? Number(c.cpl_client) : 0;
+  }
 
   async function contester(lead) {
     if (!motif.trim()) return;
@@ -47,24 +52,19 @@ export default function VueClient({ client, operation, titre }) {
     setModal(null); setMotif(''); setSubmitting(false);
   }
 
-  // CPL
-  const campagnesClient = (config.campagnes || []).filter(c => c.client_id === client && c.actif);
-  const getCpl = (op) => { const c = campagnesClient.find(c => c.operation === op); return c ? c.cpl_client : 0; };
   const byOp = {};
   leads.forEach(l => {
-    if (!byOp[l.operation]) byOp[l.operation] = { valides: 0, refuses: 0, contestes: 0, cpl: getCpl(l.operation) };
-    if (['VALIDE', 'ARBITRAGE_OK'].includes(l.statut)) byOp[l.operation].valides++;
-    if (['REFUSE', 'ARBITRAGE_KO'].includes(l.statut)) byOp[l.operation].refuses++;
-    if (l.statut === 'CONTESTE') byOp[l.operation].contestes++;
+    if (!byOp[l.operation]) byOp[l.operation] = { valides: 0, refuses: 0, cpl: getCpl(l.operation) };
+    if (['VALIDE','ARBITRAGE_OK'].includes(l.statut)) byOp[l.operation].valides++;
+    if (['REFUSE','ARBITRAGE_KO'].includes(l.statut)) byOp[l.operation].refuses++;
   });
-  const grandTotal = Object.values(byOp).reduce((a, v) => a + v.valides * v.cpl, 0);
-  const totalLeads = Object.values(byOp).reduce((a, v) => a + v.valides, 0);
+
+  const grandTotal = Object.values(byOp).reduce((a, v) => a + (v.valides * v.cpl), 0);
+  const totalLeads = leads.filter(l => ['VALIDE','ARBITRAGE_OK'].includes(l.statut)).length;
 
   const css = {
     app: { maxWidth: 620, margin: '0 auto', background: '#fff', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' },
     header: { background: '#185FA5', padding: '12px 18px' },
-    logo: { color: '#fff', fontWeight: 700, fontSize: 15 },
-    sub: { color: 'rgba(255,255,255,0.75)', fontSize: 11 },
     tabs: { display: 'flex', borderBottom: '1px solid #eee', background: '#fafafa' },
     tab: (a) => ({ padding: '10px 18px', fontSize: 13, fontWeight: a ? 600 : 400, color: a ? '#185FA5' : '#666', borderBottom: a ? '2px solid #185FA5' : '2px solid transparent', cursor: 'pointer', background: 'none', border: 'none' }),
     body: { padding: '14px 16px' },
@@ -77,46 +77,34 @@ export default function VueClient({ client, operation, titre }) {
     totalBox: { background: '#E6F1FB', border: '1px solid #85B7EB', borderRadius: 8, padding: '12px 16px', marginTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
   };
 
-  const valides = leads.filter(l => ['VALIDE', 'ARBITRAGE_OK'].includes(l.statut));
-  const contestes = leads.filter(l => l.statut === 'CONTESTE');
-  const invalidés = leads.filter(l => l.statut === 'ARBITRAGE_KO');
-
   return (
     <div style={css.app}>
       <div style={css.header}>
-        <div style={css.logo}>TargetEdge — {titre}</div>
-        <div style={css.sub}>{operation}</div>
+        <div style={{ color: '#fff', fontWeight: 700, fontSize: 15 }}>TargetEdge — {titre}</div>
+        <div style={{ color: 'rgba(255,255,255,0.75)', fontSize: 11 }}>{operation}</div>
       </div>
-
       <div style={css.tabs}>
         <button style={css.tab(tab === 'leads')} onClick={() => setTab('leads')}>📋 Leads reçus</button>
         <button style={css.tab(tab === 'facture')} onClick={() => setTab('facture')}>🧾 Facture</button>
       </div>
-
       <div style={css.body}>
         {loading && <div style={{ color: '#888', textAlign: 'center', padding: 30 }}>Chargement...</div>}
 
-        {/* ── TAB LEADS ── */}
         {!loading && tab === 'leads' && (
           <>
             <div style={css.statGrid}>
-              {[['Leads reçus', totalLeads, '#3B6D11'], ['En contestation', contestes.length, '#7a5c00'], ['Invalidés', invalidés.length, '#A32D2D']].map(([l, n, c]) => (
+              {[['Leads reçus', totalLeads, '#3B6D11'], ['En contestation', leads.filter(l => l.statut === 'CONTESTE').length, '#7a5c00'], ['Invalidés', leads.filter(l => l.statut === 'ARBITRAGE_KO').length, '#A32D2D']].map(([l, n, c]) => (
                 <div key={l} style={css.stat}>
                   <div style={{ fontSize: 20, fontWeight: 700, color: c }}>{n}</div>
                   <div style={{ fontSize: 10, color: '#888', marginTop: 1 }}>{l}</div>
                 </div>
               ))}
             </div>
-
             <div style={{ fontSize: 11, padding: '8px 12px', background: '#EAF3DE', borderRadius: 8, color: '#3B6D11', border: '1px solid #97C459', marginBottom: 14 }}>
               ✉ Email TargetEdge à chaque nouveau lead validé. <strong>72h</strong> pour contester.
             </div>
-
-            {leads.filter(l => l.statut !== 'REFUSE').length === 0 && (
-              <div style={{ color: '#aaa', textAlign: 'center', padding: 30 }}>Aucun lead pour le moment</div>
-            )}
-
-            {leads.filter(l => l.statut !== 'REFUSE').map(lead => {
+            {leads.length === 0 && <div style={{ color: '#aaa', textAlign: 'center', padding: 30 }}>Aucun lead pour le moment</div>}
+            {leads.map(lead => {
               const hR = heuresRestantes(lead.date_validation);
               const contestable = lead.statut === 'VALIDE' && hR > 0;
               return (
@@ -128,21 +116,17 @@ export default function VueClient({ client, operation, titre }) {
                         {lead.prenom} {lead.nom} — {lead.fonction}<br />
                         {lead.tel}{lead.email ? ' · ' + lead.email : ''}
                       </div>
-                      {lead.qualification?.salaries && <div style={{ fontSize: 11, color: '#666', marginTop: 3 }}>{lead.qualification.salaries} salariés{lead.qualification.assureur ? ' · ' + lead.qualification.assureur : ''}{lead.qualification.echeance && lead.qualification.echeance !== 'Ne sait pas' ? ' · Éch. ' + lead.qualification.echeance : ''}</div>}
                       <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>RDV : {lead.rdv_date} {lead.rdv_heure} ({lead.rdv_format})</div>
+                      <div style={{ fontSize: 10, color: '#888', marginTop: 3 }}>Reçu le {lead.date} · TargetEdge</div>
                     </div>
                     <div>
                       {lead.statut === 'VALIDE' && <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: '#EAF3DE', color: '#3B6D11' }}>✓ Validé</span>}
-                      {lead.statut === 'CONTESTE' && <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: '#FFF8E6', color: '#7a5c00' }}>⚠ En contestation</span>}
+                      {lead.statut === 'CONTESTE' && <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: '#FFF8E6', color: '#7a5c00' }}>⚠ Contesté</span>}
                       {lead.statut === 'ARBITRAGE_OK' && <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: '#EAF3DE', color: '#3B6D11' }}>✓ Maintenu</span>}
                       {lead.statut === 'ARBITRAGE_KO' && <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: '#FCEBEB', color: '#A32D2D' }}>✕ Invalidé</span>}
                     </div>
                   </div>
-
                   {lead.audio_url && <audio controls style={{ width: '100%', marginTop: 10, height: 36 }} src={lead.audio_url} />}
-
-                  <div style={{ fontSize: 10, color: '#aaa', marginTop: 5 }}>Reçu le {lead.date} · TargetEdge</div>
-
                   {lead.statut === 'CONTESTE' && (
                     <div style={{ marginTop: 8, padding: '7px 10px', background: '#FFF8E6', borderRadius: 7, fontSize: 11, color: '#7a5c00' }}>Contestation envoyée — arbitrage TargetEdge en cours</div>
                   )}
@@ -157,7 +141,6 @@ export default function VueClient({ client, operation, titre }) {
           </>
         )}
 
-        {/* ── TAB FACTURE ── */}
         {!loading && tab === 'facture' && (
           <>
             <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14 }}>🧾 Facture TargetEdge — {titre}</div>
@@ -169,9 +152,9 @@ export default function VueClient({ client, operation, titre }) {
                   <thead>
                     <tr>
                       <th style={css.th}>Opération</th>
-                      <th style={css.th}>Leads</th>
+                      <th style={css.th}>Reçus</th>
                       <th style={{ ...css.th, color: '#A32D2D' }}>Déduits</th>
-                      <th style={css.th}>Facturés</th>
+                      <th style={{ ...css.th, color: '#3B6D11' }}>Facturés</th>
                       <th style={css.th}>CPL</th>
                       <th style={{ ...css.th, textAlign: 'right' }}>Total</th>
                     </tr>
@@ -180,17 +163,17 @@ export default function VueClient({ client, operation, titre }) {
                     {Object.entries(byOp).map(([op, v]) => (
                       <tr key={op}>
                         <td style={css.td}>{op}</td>
-                        <td style={css.td}>{v.valides + v.refuses + v.contestes}</td>
+                        <td style={css.td}>{v.valides + v.refuses}</td>
                         <td style={{ ...css.td, color: '#A32D2D' }}>{v.refuses}</td>
                         <td style={{ ...css.td, color: '#3B6D11', fontWeight: 700 }}>{v.valides}</td>
-                        <td style={css.td}>{v.cpl}€ HT</td>
-                        <td style={css.tdR}>{(v.valides * v.cpl).toFixed(2)} €</td>
+                        <td style={css.td}>{v.cpl > 0 ? v.cpl + ' € HT' : '—'}</td>
+                        <td style={css.tdR}>{v.cpl > 0 ? (v.valides * v.cpl).toFixed(2) + ' €' : '—'}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
                 <div style={css.totalBox}>
-                  <div style={{ fontSize: 13, color: '#185FA5', fontWeight: 500 }}>{totalLeads} leads · Montant dû à TargetEdge</div>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: '#185FA5' }}>{totalLeads} leads · Montant dû à TargetEdge</div>
                   <div style={{ fontSize: 22, fontWeight: 700, color: '#185FA5' }}>{grandTotal.toFixed(2)} € HT</div>
                 </div>
               </>
@@ -199,7 +182,6 @@ export default function VueClient({ client, operation, titre }) {
         )}
       </div>
 
-      {/* Modal contestation */}
       {modal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ background: '#fff', borderRadius: 12, padding: 20, maxWidth: 360, width: '92%' }}>
