@@ -9,7 +9,7 @@ function borderCol(s) {
 
 export default function VueLecture({ centre, titre }) {
   const [leads, setLeads] = useState([]);
-  const [config, setConfig] = useState({ campagnes: [] });
+  const [campagnes, setCampagnes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('leads');
   const [opFilter, setOpFilter] = useState('tous');
@@ -20,24 +20,20 @@ export default function VueLecture({ centre, titre }) {
       fetch('/api/config').then(r => r.json()),
     ]).then(([ld, cfg]) => {
       setLeads(ld.leads || []);
-      setConfig(cfg);
+      setCampagnes(cfg.campagnes || []);
       setLoading(false);
     });
   }, [centre]);
 
-  const getCpl = (op) => {
-    const c = (config.campagnes || []).find(c => c.operation === op);
-    return c ? c.cpl_st : 0;
-  };
+  function getCpl(op) {
+    const c = campagnes.find(c => c.operation === op);
+    return c ? Number(c.cpl_st) : 0;
+  }
 
-  // Stats
-  const total = leads.length;
   const valides = leads.filter(l => ['VALIDE','ARBITRAGE_OK'].includes(l.statut));
   const refuses = leads.filter(l => ['REFUSE','ARBITRAGE_KO'].includes(l.statut));
-  const contestes = leads.filter(l => l.statut === 'CONTESTE');
   const enAttente = leads.filter(l => l.statut === 'EN_ATTENTE');
 
-  // CPL par opération
   const byOp = {};
   leads.forEach(l => {
     if (!byOp[l.operation]) byOp[l.operation] = { valides: 0, refuses: 0, attente: 0, cpl: getCpl(l.operation) };
@@ -45,9 +41,9 @@ export default function VueLecture({ centre, titre }) {
     else if (['REFUSE','ARBITRAGE_KO'].includes(l.statut)) byOp[l.operation].refuses++;
     else byOp[l.operation].attente++;
   });
-  const totalDu = Object.values(byOp).reduce((a, v) => a + v.valides * v.cpl, 0);
-  const totalLeadsValides = valides.length;
 
+  const totalDu = Object.values(byOp).reduce((a, v) => a + (v.valides * v.cpl), 0);
+  const totalLeadsValides = valides.length;
   const ops = [...new Set(leads.map(l => l.operation))];
   const filtered = opFilter === 'tous' ? leads : leads.filter(l => l.operation === opFilter);
 
@@ -74,38 +70,30 @@ export default function VueLecture({ centre, titre }) {
         <div style={{ color: '#fff', fontWeight: 700, fontSize: 15 }}>TargetEdge — {titre}</div>
         <div style={{ color: 'rgba(255,255,255,0.75)', fontSize: 11, marginTop: 2 }}>Lecture seule · Informations client final non visibles</div>
       </div>
-
       <div style={css.tabs}>
         <button style={css.tab(tab === 'leads')} onClick={() => setTab('leads')}>📋 Mes leads</button>
         <button style={css.tab(tab === 'cpl')} onClick={() => setTab('cpl')}>💶 Mon calculateur</button>
       </div>
-
       <div style={css.body}>
         {loading && <div style={{ color: '#888', textAlign: 'center', padding: 30 }}>Chargement...</div>}
 
-        {/* ── TAB LEADS ── */}
         {!loading && tab === 'leads' && (
           <>
             <div style={css.statGrid}>
-              {[['Total', total, '#1d1d1f'], ['Validés', valides.length, '#3B6D11'], ['Refusés', refuses.length, '#A32D2D'], ['Attente', enAttente.length, '#5F5E5A']].map(([l, n, c]) => (
+              {[['Total', leads.length, '#1d1d1f'], ['Validés', valides.length, '#3B6D11'], ['Refusés', refuses.length, '#A32D2D'], ['Attente', enAttente.length, '#5F5E5A']].map(([l, n, c]) => (
                 <div key={l} style={css.stat}>
                   <div style={{ fontSize: 20, fontWeight: 700, color: c }}>{n}</div>
                   <div style={{ fontSize: 10, color: '#888', marginTop: 1 }}>{l}</div>
                 </div>
               ))}
             </div>
-
             {ops.length > 1 && (
               <div style={css.filterRow}>
-                <button style={css.filterBtn(opFilter === 'tous')} onClick={() => setOpFilter('tous')}>Toutes opérations</button>
-                {ops.map(op => (
-                  <button key={op} style={css.filterBtn(opFilter === op)} onClick={() => setOpFilter(op)}>{op}</button>
-                ))}
+                <button style={css.filterBtn(opFilter === 'tous')} onClick={() => setOpFilter('tous')}>Toutes</button>
+                {ops.map(op => <button key={op} style={css.filterBtn(opFilter === op)} onClick={() => setOpFilter(op)}>{op}</button>)}
               </div>
             )}
-
             {filtered.length === 0 && <div style={{ color: '#aaa', textAlign: 'center', padding: 30 }}>Aucun lead</div>}
-
             {filtered.map(lead => (
               <div key={lead.id} style={{ borderLeft: '3px solid ' + borderCol(lead.statut), borderRadius: '0 10px 10px 0', background: '#fafafa', padding: '11px 13px', marginBottom: 8 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -128,32 +116,22 @@ export default function VueLecture({ centre, titre }) {
                     {lead.statut === 'ARBITRAGE_OK' && <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: '#EAF3DE', color: '#3B6D11' }}>✓ Maintenu</span>}
                   </div>
                 </div>
-                {/* Audio uniquement si validé */}
                 {['VALIDE','ARBITRAGE_OK'].includes(lead.statut) && lead.audio_url && (
                   <audio controls style={{ width: '100%', marginTop: 8, height: 34 }} src={lead.audio_url} />
                 )}
                 {['REFUSE','ARBITRAGE_KO'].includes(lead.statut) && lead.motif_refus && (
-                  <div style={{ fontSize: 10, color: '#A32D2D', marginTop: 5, padding: '5px 8px', background: '#FCEBEB', borderRadius: 6 }}>
-                    Motif : {lead.motif_refus}
-                  </div>
+                  <div style={{ fontSize: 10, color: '#A32D2D', marginTop: 5, padding: '5px 8px', background: '#FCEBEB', borderRadius: 6 }}>Motif : {lead.motif_refus}</div>
                 )}
               </div>
             ))}
           </>
         )}
 
-        {/* ── TAB CPL ── */}
         {!loading && tab === 'cpl' && (
           <>
             <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14 }}>💶 Calculateur CPL — {titre}</div>
-            <div style={{ fontSize: 11, color: '#888', marginBottom: 12 }}>
-              Seuls les leads <strong>validés</strong> sont comptabilisés. Les refusés sont automatiquement déduits.
-            </div>
-
-            {Object.keys(byOp).length === 0 && (
-              <div style={{ color: '#aaa', textAlign: 'center', padding: 30 }}>Aucun lead enregistré</div>
-            )}
-
+            <div style={{ fontSize: 11, color: '#888', marginBottom: 12 }}>Seuls les leads <strong>validés</strong> sont comptabilisés. Les refusés sont automatiquement déduits.</div>
+            {Object.keys(byOp).length === 0 && <div style={{ color: '#aaa', textAlign: 'center', padding: 30 }}>Aucun lead enregistré</div>}
             {Object.keys(byOp).length > 0 && (
               <>
                 <table style={css.table}>
@@ -180,7 +158,6 @@ export default function VueLecture({ centre, titre }) {
                     ))}
                   </tbody>
                 </table>
-
                 <div style={css.totalBox}>
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 600, color: '#3B6D11' }}>{totalLeadsValides} leads validés</div>
@@ -188,10 +165,7 @@ export default function VueLecture({ centre, titre }) {
                   </div>
                   <div style={{ fontSize: 22, fontWeight: 700, color: '#3B6D11' }}>{totalDu.toFixed(2)} € HT</div>
                 </div>
-
-                <div style={{ fontSize: 10, color: '#aaa', marginTop: 8, lineHeight: 1.5 }}>
-                  ⚠ Ce calculateur se met à jour en temps réel. Un lead contesté par le client et invalidé par TargetEdge sera automatiquement déduit.
-                </div>
+                <div style={{ fontSize: 10, color: '#aaa', marginTop: 8 }}>⚠ Les leads contestés et invalidés sont automatiquement déduits.</div>
               </>
             )}
           </>
